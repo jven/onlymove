@@ -1,5 +1,6 @@
 package scripts;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -11,20 +12,27 @@ import java.util.Optional;
 public class PrintPuzzles {
 
   public static void main(String[] args) throws Exception {
-    String[][] samplePieceArray = new String[8][8];
-    samplePieceArray[2][2] = "k";
-    samplePieceArray[4][2] = "K";
-    samplePieceArray[6][2] = "P";
-    String fen = pieceArrayToFen(samplePieceArray);
-    System.out.println(fen);
-
-    Optional<JSONObject> tablebaseResponse = fetchResponseFromTablebase(fen);
-    if (!tablebaseResponse.isPresent()) {
-      System.out.println("Failed to fetch response.");
-      return;
+    while (true) {
+      String[][] pieceArray = generateRandomPieceArray();
+      String fen = pieceArrayToFen(pieceArray);
+      Optional<JSONObject> tablebaseResponse = fetchResponseFromTablebase(fen);
+      if (!tablebaseResponse.isPresent()) {
+        continue;
+      }
+      if (!isInterestingResponse(tablebaseResponse.get())) {
+        continue;
+      }
+      System.out.println(fen);
     }
+  }
 
-    System.out.println(tablebaseResponse.get());
+  private static String[][] generateRandomPieceArray() {
+    String[][] samplePieceArray = new String[8][8];
+    samplePieceArray[randomCoordinate()][randomCoordinate()] = "k";
+    samplePieceArray[randomCoordinate()][randomCoordinate()] = "K";
+    samplePieceArray[randomCoordinate()][randomCoordinate()] = "R";
+    samplePieceArray[randomCoordinate()][randomCoordinate()] = "n";
+    return samplePieceArray;
   }
 
   private static String pieceArrayToFen(String[][] pieceArray) {
@@ -54,7 +62,7 @@ public class PrintPuzzles {
   }
 
   private static Optional<JSONObject> fetchResponseFromTablebase(String fen) throws Exception {
-    URL url = new URL("http://tablebase.lichess.ovh/standard?fen=" + fen);
+    URL url = new URL("http://localhost:9000/standard?fen=" + fen);
     HttpURLConnection connection = (HttpURLConnection) url.openConnection();
     connection.setRequestMethod("GET");
     connection.setRequestProperty("Content-Type", "application/json");
@@ -72,5 +80,39 @@ public class PrintPuzzles {
     reader.close();
 
     return Optional.of(new JSONObject(response.toString()));
+  }
+
+  private static boolean isInterestingResponse(JSONObject response) throws Exception {
+    if (response.getInt("wdl") != 2) {
+      // The position is not winning for white.
+      return false;
+    }
+    JSONArray moves = response.getJSONArray("moves");
+    if (moves.length() < 2) {
+      // There is only one legal move.
+      return false;
+    }
+    int numWinningMoves = 0;
+    String winningMoveSan = "";
+    for (int i = 0; i < moves.length(); i++) {
+      JSONObject move = moves.getJSONObject(i);
+      if (move.getInt("wdl") != -2) {
+        // This move is not winning for white.
+        continue;
+      }
+      numWinningMoves++;
+      winningMoveSan = move.getString("san");
+    }
+
+    if (numWinningMoves > 1) {
+      // There is more than one winning move for white.
+      return false;
+    }
+    // The position is interesting if the only winning move is not a capture.
+    return !winningMoveSan.contains("x");
+  }
+
+  private static int randomCoordinate() {
+    return (int) (8 * Math.random());
   }
 }
